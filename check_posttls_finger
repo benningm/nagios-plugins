@@ -14,6 +14,7 @@ sub usage {
     [--wrap-resolvconf|-w]          (enable resolv_wrapper)
     [--resolv-wrapper|-l] <path>    (path to libresolv_wrapper.so)
     [--resolv-conf|-r] <path>       (path to resolv.conf file)
+    [--passthrough|-p] <parameter>  (for example -p \"-t\" -p \"5\"  for setting timeout to 5s)
 \n";
 	exit 1;
 }
@@ -23,6 +24,7 @@ my $resolv_wrapper = '/usr/local/lib64/libresolv_wrapper.so';
 my $resolv_conf = '/etc/check_posttls_finger-resolv.conf';
 my $wrap = 0;
 my $domain;
+my @passthrough = ();
 
 GetOptions (
 	"posttls-finger-bin|c=s"  => \$posttls_finger,
@@ -30,13 +32,14 @@ GetOptions (
 	"wrap-resolvconf|w" => \$wrap,
 	"resolv-wrapper|l=s"  => \$resolv_wrapper,
 	"resolv-conf|l=s"  => \$resolv_conf,
+        "passthrough|p=s" => \@passthrough,
 ) or usage();
 
 if( ! defined $domain ) {
 	usage;
 }
 
-my @cmd = ( $posttls_finger, '-l', 'dane', '-L', '1', '-c', $domain );
+my @cmd = ( $posttls_finger, '-l', 'dane', '-L', '1', '-c', @passthrough, $domain );
 my ( $in, $out, $err );
 
 run(\@cmd, \$in, \$out, \$err,
