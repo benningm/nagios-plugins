@@ -1,0 +1,89 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use IPC::Run qw(run timeout);
+use Getopt::Long;
+
+sub usage {
+	print "usage: $0 [options]
+	
+  Options:
+    [--systemctl|-s] <path-to-systemctl>
+\n";
+	exit 1;
+}
+
+my $systemctl = '/bin/systemctl';
+
+GetOptions (
+	"systemctl|s=s"  => \$systemctl,
+) or usage();
+
+sub get_system_state {
+  my @cmd = ( $systemctl, 'is-system-running', '--no-pager', '--no-legend' );
+  my ( $in, $out, $err );
+  run( \@cmd, \$in, \$out, \$err, timeout( 10 ) );
+  chomp( $out );
+  return $out;
+}
+
+sub get_services {
+  my %data = (
+    services => undef,
+    by_state => {
+      active => [],
+      inactive => [],
+      failed => [],
+    },
+  );
+  my @cmd = ( $systemctl, 'list-units', '--no-pager', '--no-legend', '--plain' );
+  my ( $in, $out, $err );
+  run( \@cmd, \$in, \$out, \$err, timeout( 10 ) );
+
+  my @services = map {
+    my @f = split(/\s+/, $_);
+    {
+      unit => $f[0],
+      load => $f[1],
+      state => $f[2],
+      sub_state => $f[3],
+      desc => $f[4],
+    }    
+  } split("\n", $out);
+  $data{'services'} = \@services;
+
+  foreach my $srv ( @services ) {
+    foreach my $state ( 'active', 'inactive', 'failed' ) {
+      if( $srv->{'state'} eq $state ) {
+        push( @{$data{'by_state'}->{$state}}, $srv );
+      }
+    }
+  }
+
+  return \%data;
+}
+
+my $system_state = get_system_state();
+my $services = get_services();
+
+my $fail_cnt = scalar @{$services->{'by_state'}->{'failed'}};
+if( $system_state !~ /^running$/
+    || $fail_cnt ) {
+  my $failed_services = join("\n", map { $_->{'unit'} . ' ' . $_->{'state'} } @{$services->{'by_state'}->{'failed'}});
+  print "SYSTEM CRITICAL - status $system_state - $fail_cnt services failed\n$failed_services\n";
+  exit 2;
+}
+
+my @unit_stats;
+foreach my $state ( keys %{$services->{'by_state'}} ) {
+  my $cnt = scalar( @{$services->{'by_state'}->{$state}} );
+  if( $cnt ) {
+    push( @unit_stats, "$cnt $state");
+  }
+}
+my $stats = join(', ', @unit_stats );
+print "SYSTEM OK - status $system_state - $stats\n";
+exit 0;
+
